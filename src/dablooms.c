@@ -257,14 +257,18 @@ int counting_bloom_add(counting_bloom_t *bloom, const char *s, size_t len)
     
     hash_func(bloom, s, len, hashes);
     
+    int r = 0;
     for (i = 0; i < bloom->nfuncs; i++) {
         offset = i * bloom->counts_per_func;
         index = hashes[i] + offset;
-        bitmap_increment(bloom->bitmap, index, bloom->offset);
+        r = bitmap_increment(bloom->bitmap, index, bloom->offset);
+        if (r != 0) {
+            break;
+        }
     }
-    bloom->header->count++;
-    
-    return 0;
+    if (r == 0)
+        bloom->header->count++;
+    return r;
 }
 
 int counting_bloom_remove(counting_bloom_t *bloom, const char *s, size_t len)
@@ -272,16 +276,18 @@ int counting_bloom_remove(counting_bloom_t *bloom, const char *s, size_t len)
     unsigned int index, i, offset;
     unsigned int *hashes = bloom->hashes;
     
+    int r = 0;
     hash_func(bloom, s, len, hashes);
-    
     for (i = 0; i < bloom->nfuncs; i++) {
         offset = i * bloom->counts_per_func;
         index = hashes[i] + offset;
-        bitmap_decrement(bloom->bitmap, index, bloom->offset);
+        r = bitmap_decrement(bloom->bitmap, index, bloom->offset);
+        if(r != 0)
+            break;
     }
-    bloom->header->count--;
-    
-    return 0;
+    if (r == 0)
+        bloom->header->count--;
+    return r;
 }
 
 int counting_bloom_check(counting_bloom_t *bloom, const char *s, size_t len)
@@ -427,17 +433,17 @@ int scaling_bloom_add(scaling_bloom_t *bloom, const char *s, size_t len, uint64_
     if (bloom->header->max_id < id) {
         bloom->header->max_id = id;
     }
-    counting_bloom_add(cur_bloom, s, len);
+    int r = counting_bloom_add(cur_bloom, s, len);
+    if (r == 0)
+        bloom->header->mem_seqnum = seqnum + 1;
     
-    bloom->header->mem_seqnum = seqnum + 1;
-    
-    return 1;
+    return r==0?1:0;
 }
 
 int scaling_bloom_remove(scaling_bloom_t *bloom, const char *s, size_t len, uint64_t id)
 {
     counting_bloom_t *cur_bloom;
-    int i;
+    int i, r;
     uint64_t seqnum;
     
     for (i = bloom->num_blooms - 1; i >= 0; i--) {
@@ -445,8 +451,9 @@ int scaling_bloom_remove(scaling_bloom_t *bloom, const char *s, size_t len, uint
         if (id >= cur_bloom->header->id) {
             seqnum = scaling_bloom_clear_seqnums(bloom);
             
-            counting_bloom_remove(cur_bloom, s, len);
-            
+            r = counting_bloom_remove(cur_bloom, s, len);
+            if (r != 0)
+                break;
             bloom->header->mem_seqnum = seqnum + 1;
             return 1;
         }
