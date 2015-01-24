@@ -32,14 +32,14 @@ static int Dablooms_init(Dablooms *self, PyObject *args, PyObject *kwds)
 {
     double error_rate;
     const char *filepath;
-    unsigned int capacity;
+    unsigned long capacity;
     static char *kwlist[] = {"capacity", "error_rate", "filepath", NULL};
     
-    if (! PyArg_ParseTupleAndKeywords(args, kwds, "|ids", kwlist,
+    //if (! PyArg_ParseTupleAndKeywords(args, kwds, "|ids", kwlist,
+    if (! PyArg_ParseTupleAndKeywords(args, kwds, "|lds", kwlist,
                                       &capacity, &error_rate, &filepath)) {
         return -1;
     }
-    
     self->filter = new_scaling_bloom(capacity, error_rate, filepath);
     
     return 0;
@@ -181,10 +181,10 @@ static PyObject *load_dabloom(PyTypeObject *type, PyObject *args, PyObject *kwds
     Dablooms *self = (Dablooms *)PyObject_New(Dablooms, &DabloomsType);
     double error_rate;
     const char *filepath;
-    unsigned int capacity;
+    unsigned long capacity;
     static char *kwlist[] = {"capacity", "error_rate", "filepath", NULL};
     
-    if (! PyArg_ParseTupleAndKeywords(args, kwds, "|ids", kwlist,
+    if (! PyArg_ParseTupleAndKeywords(args, kwds, "|lds", kwlist,
                                       &capacity, &error_rate, &filepath)) {
         return NULL;
     }
