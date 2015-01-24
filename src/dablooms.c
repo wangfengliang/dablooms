@@ -294,17 +294,19 @@ int counting_bloom_check(counting_bloom_t *bloom, const char *s, size_t len)
 {
     unsigned int index, i, offset;
     unsigned int *hashes = bloom->hashes;
-    
+    int r=0, min_count = 0x1f;
     hash_func(bloom, s, len, hashes);
     
     for (i = 0; i < bloom->nfuncs; i++) {
         offset = i * bloom->counts_per_func;
         index = hashes[i] + offset;
-        if (!(bitmap_check(bloom->bitmap, index, bloom->offset))) {
+        if (!(r=bitmap_check(bloom->bitmap, index, bloom->offset))) {
             return 0;
         }
+        if(r < min_count)
+            min_count = r
     }
-    return 1;
+    return min_count;
 }
 
 int free_scaling_bloom(scaling_bloom_t *bloom)
