@@ -123,12 +123,12 @@ int bitmap_increment(bitmap_t *bitmap, unsigned int index, long offset)
     }
     
     if (temp == 0x0f) {
-        fprintf(stderr, "Error, 4 bit int Overflow\n");
+        //fprintf(stderr, "Error, 4 bit int Overflow\n");
         return -1;
     }
     
     bitmap->array[access] = n;
-    return 0;
+    return temp+1;
 }
 
 /* increments the four bit counter */
@@ -147,12 +147,12 @@ int bitmap_decrement(bitmap_t *bitmap, unsigned int index, long offset)
     }
     
     if (temp == 0x00) {
-        fprintf(stderr, "Error, Decrementing zero\n");
+        //fprintf(stderr, "Error, Decrementing zero\n");
         return -1;
     }
-    
+    //fprintf(stderr, "set bitmap->array[access]=%d temp=%d\n", n, temp);
     bitmap->array[access] = n;
-    return 0;
+    return temp-1;
 }
 
 /* decrements the four bit counter */
@@ -160,9 +160,11 @@ int bitmap_check(bitmap_t *bitmap, unsigned int index, long offset)
 {
     long access = index / 2 + offset;
     if (index % 2 != 0 ) {
+        //fprintf(stderr, "get bitmap->array[access]=%d\n", (bitmap->array[access] & 0x0f));
         return bitmap->array[access] & 0x0f;
     } else {
-        return bitmap->array[access] & 0xf0;
+        //fprintf(stderr, "get bitmap->array[access]=%d\n", (bitmap->array[access] & 0xf0));
+        return (bitmap->array[access] & 0xf0)>>4;
     }
 }
 
@@ -257,18 +259,18 @@ int counting_bloom_add(counting_bloom_t *bloom, const char *s, size_t len)
     
     hash_func(bloom, s, len, hashes);
     
-    int r = 0;
+    int r = 0, min_count=0x1f;
     for (i = 0; i < bloom->nfuncs; i++) {
         offset = i * bloom->counts_per_func;
         index = hashes[i] + offset;
         r = bitmap_increment(bloom->bitmap, index, bloom->offset);
-        if (r != 0) {
-            break;
-        }
+        if (r < 0)
+            return r;
+        else if(r < min_count)
+            min_count = r;
     }
-    if (r == 0)
-        bloom->header->count++;
-    return r;
+    bloom->header->count++;
+    return min_count;
 }
 
 int counting_bloom_remove(counting_bloom_t *bloom, const char *s, size_t len)
@@ -276,18 +278,19 @@ int counting_bloom_remove(counting_bloom_t *bloom, const char *s, size_t len)
     unsigned int index, i, offset;
     unsigned int *hashes = bloom->hashes;
     
-    int r = 0;
+    int r = 0, min_count=0x1f;
     hash_func(bloom, s, len, hashes);
     for (i = 0; i < bloom->nfuncs; i++) {
         offset = i * bloom->counts_per_func;
         index = hashes[i] + offset;
         r = bitmap_decrement(bloom->bitmap, index, bloom->offset);
-        if(r != 0)
-            break;
+        if(r < 0)
+            return r;
+        else if(r < min_count)
+            min_count = r;
     }
-    if (r == 0)
-        bloom->header->count--;
-    return r;
+    bloom->header->count--;
+    return min_count;
 }
 
 int counting_bloom_check(counting_bloom_t *bloom, const char *s, size_t len)
@@ -303,9 +306,11 @@ int counting_bloom_check(counting_bloom_t *bloom, const char *s, size_t len)
         if (!(r=bitmap_check(bloom->bitmap, index, bloom->offset))) {
             return 0;
         }
+        //fprintf(stderr, "aaaaaaaaaaaaa r=%d %d\n", r, min_count);
         if(r < min_count)
-            min_count = r
+            min_count = r;
     }
+    //fprintf(stderr, "aaaaaaaaaaaaa %d\n", min_count);
     return min_count;
 }
 
@@ -436,10 +441,10 @@ int scaling_bloom_add(scaling_bloom_t *bloom, const char *s, size_t len, uint64_
         bloom->header->max_id = id;
     }
     int r = counting_bloom_add(cur_bloom, s, len);
-    if (r == 0)
+    if (r > 0)
         bloom->header->mem_seqnum = seqnum + 1;
     
-    return r==0?1:0;
+    return r>0?r:0;
 }
 
 int scaling_bloom_remove(scaling_bloom_t *bloom, const char *s, size_t len, uint64_t id)
@@ -454,10 +459,10 @@ int scaling_bloom_remove(scaling_bloom_t *bloom, const char *s, size_t len, uint
             seqnum = scaling_bloom_clear_seqnums(bloom);
             
             r = counting_bloom_remove(cur_bloom, s, len);
-            if (r != 0)
-                break;
+            if (r < 0)
+                return 0;
             bloom->header->mem_seqnum = seqnum + 1;
-            return 1;
+            return r;
         }
     }
     return 0;
@@ -465,12 +470,12 @@ int scaling_bloom_remove(scaling_bloom_t *bloom, const char *s, size_t len, uint
 
 int scaling_bloom_check(scaling_bloom_t *bloom, const char *s, size_t len)
 {
-    int i;
+    int i,r;
     counting_bloom_t *cur_bloom;
     for (i = bloom->num_blooms - 1; i >= 0; i--) {
         cur_bloom = bloom->blooms[i];
-        if (counting_bloom_check(cur_bloom, s, len)) {
-            return 1;
+        if ((r=counting_bloom_check(cur_bloom, s, len))) {
+            return r;
         }
     }
     return 0;
